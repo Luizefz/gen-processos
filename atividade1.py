@@ -2,38 +2,51 @@ import os
 import time
 import threading
 
-time_goal = 5
-pid_gerador = 0
-# iteracoes = 1_000_000_000
+global nice
+global execution_time
+global iteracoes
 
-# def gerador_processo_completo(valor_tempo):
-#     # os.nice(-20)
-#     for i in range(valor_tempo):
-#         i = i*i
+time_goal = 60
+nice = 0
+execution_time = 0
 
-
-def gerador_processo_incompleto(iteracoes, nice):
+def gerador_processo(iteracoes):
+    global nice, execution_time
+    start = time.time()
     os.nice(nice)
-    pid_gerador = os.getpid()
     for i in range(iteracoes):
         i = i*i
+    execution_time = time.time() - start
+    print(f"Acabou! {execution_time:.2f} no nice: {nice} iteracoes: {iteracoes}")
 
-def gerenciador_processos(thread_processo_monitorado):
-    execution_time = 0
-    nice_value = 0
+def gerenciador_processos():
+    global nice, execution_time, iteracoes
 
-    start_time = time.time()
-    while thread_processo_monitorado.is_alive():
-        execution_time = time.time() - start_time
+    if execution_time > time_goal:
+        nice -= 3
+        iteracoes -= 100
+        print(f'[Lento] Tempo de execução: {execution_time:.2f}\nNovo nice: {nice}')
+    elif execution_time < time_goal:
+        nice += 3
+        iteracoes += 100
+        print(f'[Rápido] Tempo de execução: {execution_time:.2f}\nNovo nice: {nice}')
 
-        if execution_time > time_goal:
-            print(f'Tempo de execucao: {execution_time:.2f}\nNice: {nice_value}')
+def executar_processos(iteracoes):
+    global execution_time, nice
+    
+    while True:
+        t1 = threading.Thread(target=gerador_processo, args=(iteracoes,))
+        t2 = threading.Thread(target=gerenciador_processos)
 
-t1 = threading.Thread(target=gerador_processo_incompleto, args=(1_000_000_000, 10))
-t2 = threading.Thread(target=gerenciador_processos, args=(t1))
+        t1.start()
+        t2.start()
 
-t1.start()
-t2.start()
+        t1.join()
+        t2.join()
 
-t1.join()
-t2.join()
+        if time_goal - 1 < execution_time < time_goal + 1:
+            break
+
+
+iteracoes = 1_000_000_900
+executar_processos(iteracoes)
