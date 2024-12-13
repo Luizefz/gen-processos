@@ -1,52 +1,63 @@
 import os
 import time
 import threading
+import queue
 
-global nice
-global execution_time
-global iteracoes
-
+iteracoes = 60_000_900
 time_goal = 60
-nice = 0
-execution_time = 0
+progress = 0
 
-def gerador_processo(iteracoes):
-    global nice, execution_time
-    start = time.time()
+def gerador_processo(fila, nice):
+    print(f"pid gerador: {os.getpid()}")
     os.nice(nice)
+    start_time = time.time()
     for i in range(iteracoes):
-        i = i*i
-    execution_time = time.time() - start
-    print(f"Acabou! {execution_time:.2f} no nice: {nice} iteracoes: {iteracoes}")
-
-def gerenciador_processos():
-    global nice, execution_time, iteracoes
-
-    if execution_time > time_goal:
-        nice -= 3
-        iteracoes -= 100
-        print(f'[Lento] Tempo de execução: {execution_time:.2f}\nNovo nice: {nice}')
-    elif execution_time < time_goal:
-        nice += 3
-        iteracoes += 100
-        print(f'[Rápido] Tempo de execução: {execution_time:.2f}\nNovo nice: {nice}')
-
-def executar_processos(iteracoes):
-    global execution_time, nice
+        progress = i
+        i = i * i
+        
+        fila.put(progress)
     
+    fila.put(None)  #Acabou a execução
+    print(f"Acabou! Tempo de execução: {time.time() - start_time:.2f} segundos")
+
+def gerenciador_processos(fila):
+    pid = os.getpid()
+    check_count = 0
+    nice = 0
     while True:
-        t1 = threading.Thread(target=gerador_processo, args=(iteracoes,))
-        t2 = threading.Thread(target=gerenciador_processos)
-
-        t1.start()
-        t2.start()
-
-        t1.join()
-        t2.join()
-
-        if time_goal - 1 < execution_time < time_goal + 1:
+        time.sleep(5)
+        check_count += 1
+        progress = fila.queue[-1]
+        
+        if progress is None:
+            print("Parando a execução")
             break
+        
+        timer = check_count * 5
 
+        if progress > 0:
+            estimated_time = (iteracoes * timer) / progress
+        else:
+            estimated_time = float('inf')
 
-iteracoes = 1_000_000_900
-executar_processos(iteracoes)
+        if estimated_time > time_goal:
+            nice -= 3
+            os.system(f"renice -n {nice} -p {pid}")
+            print(f'[Lento] Estimado: {estimated_time:.2f}s, Novo nice: {nice}')
+        elif estimated_time < time_goal:
+            nice += 3
+            os.system(f"renice -n {nice} -p {pid}")
+            print(f'[Rápido] Estimado: {estimated_time:.2f}s, Novo nice: {nice}')
+        else:
+            print(f'[OK] Estimado: {estimated_time:.2f}s, Nice: {nice}')
+
+fila = queue.Queue()
+
+t1 = threading.Thread(target=gerador_processo, args=(fila, 0))
+t2 = threading.Thread(target=gerenciador_processos, args=(fila,))
+
+t1.start()
+t2.start()
+
+t1.join()
+t2.join()
