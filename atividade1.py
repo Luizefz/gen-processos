@@ -3,58 +3,61 @@ import time
 import threading
 import queue
 
-iteracoes = 60_000_900
+global progress
+global end_counting
+
+iteracoes = 350_000_500	
 time_goal = 60
 progress = 0
+end_counting = False
 
-def gerador_processo(fila, nice):
-    print(f"pid gerador: {os.getpid()}")
+def gerador_processo(iteracoes_params, nice):
+    global end_counting
+    global progress
     os.nice(nice)
-    start_time = time.time()
-    for i in range(iteracoes):
-        progress = i
+    for i in range(iteracoes_params):
+        progress += 1
         i = i * i
-        
-        fila.put(progress)
-    
-    fila.put(None)  #Acabou a execução
-    print(f"Acabou! Tempo de execução: {time.time() - start_time:.2f} segundos")
 
-def gerenciador_processos(fila):
+    end_counting = True 
+
+def gerenciador_processos(iteracoes_params):
+    global progress
     pid = os.getpid()
     check_count = 0
     nice = 0
-    while True:
-        time.sleep(5)
+    start_time = time.time()
+
+    while not end_counting:
         check_count += 1
-        progress = fila.queue[-1]
         
-        if progress is None:
-            print("Parando a execução")
-            break
         
-        timer = check_count * 5
+        timer = ((time.time() - start_time) * 100) / 60
+        iteracoes_percent = (progress * 100) / iteracoes_params
 
-        if progress > 0:
-            estimated_time = (iteracoes * timer) / progress
-        else:
-            estimated_time = float('inf')
+        # if progress == 100:
+        #     print("Parando a execução")
+        #     break
+       
+        if timer > iteracoes_percent:
+            nice = max(nice - 1, -20)
+            os.system(f"renice -n {nice} -p {pid}")
+            print(f'[Lento] Timer - {timer:.2f} iteracoes - {iteracoes_percent:.2f}%, Novo nice: {nice}')
 
-        if estimated_time > time_goal:
-            nice -= 3
+        elif timer < iteracoes_percent:
+            nice = min(nice + 1, 19)
             os.system(f"renice -n {nice} -p {pid}")
-            print(f'[Lento] Estimado: {estimated_time:.2f}s, Novo nice: {nice}')
-        elif estimated_time < time_goal:
-            nice += 3
-            os.system(f"renice -n {nice} -p {pid}")
-            print(f'[Rápido] Estimado: {estimated_time:.2f}s, Novo nice: {nice}')
+            print(f'[Rapido] Timer - {timer:.2f} iteracoes - {iteracoes_percent:.2f}%, Novo nice: {nice}')
+
         else:
-            print(f'[OK] Estimado: {estimated_time:.2f}s, Nice: {nice}')
+            print(f'[OK] Estão parelhos: timer - {timer:.2f}% iteracoes - {iteracoes_percent:.2f}%, Nice: {nice}')
+
+    print(f'Tempo de execução {time.time() - start_time}')
 
 fila = queue.Queue()
 
-t1 = threading.Thread(target=gerador_processo, args=(fila, 0))
-t2 = threading.Thread(target=gerenciador_processos, args=(fila,))
+t1 = threading.Thread(target=gerador_processo, args=(iteracoes, 0))
+t2 = threading.Thread(target=gerenciador_processos, args=(iteracoes,))
 
 t1.start()
 t2.start()
